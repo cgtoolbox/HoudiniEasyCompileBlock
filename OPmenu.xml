@@ -1,0 +1,51 @@
+<menuDocument>
+  <!-- menuDocument can only contain 1 menu element, whose id is 
+         implicitly "root_menu"
+      -->
+  <menu>
+    <subMenu id="houdini_easy_compile_block_menu">
+      <label>Easy Compile</label>
+      <scriptItem id="houdini_easy_compile_block">
+        <label>Easy Compile Block: For loop</label>
+        <context>
+          <expression>
+            <![CDATA[
+try:
+  return kwargs["node"].type().name() == "block_end"
+except Exception as e:
+  return False]]>
+          </expression>
+        </context>
+        <scriptCode>
+          <![CDATA[
+import houdini_easy_compile_block
+reload(houdini_easy_compile_block)
+houdini_easy_compile_block.compile_forloop(node=kwargs["node"])
+]]>
+        </scriptCode>
+      </scriptItem>
+
+      <scriptItem id="houdini_easy_compile_block_selection">
+        <label>Easy Compile Block: Selection</label>
+        <context>
+          <expression>
+            <![CDATA[
+try:
+  import hou
+  return len(hou.selectedNodes()) > 1
+except Exception as e:
+  return False]]>
+          </expression>
+        </context>
+        <scriptCode>
+          <![CDATA[
+import houdini_easy_compile_block
+reload(houdini_easy_compile_block)
+houdini_easy_compile_block.compile_selection()
+]]>
+        </scriptCode>
+      </scriptItem>
+
+  </subMenu>
+  </menu>
+</menuDocument>
