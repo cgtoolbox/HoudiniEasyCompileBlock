@@ -3,6 +3,8 @@ import sys
 import os
 import re
 
+NodeReference = hou.stringParmType.NodeReference
+
 expression_re = re.compile('\"\.\./[^,]+\"|\"(/obj/)[^,]+\"|\"(obj/)[^,]+\"')
 
 class BlockNodeTypes(object):
@@ -47,6 +49,29 @@ def compile_forloop(node=None):
     print "----"
 
 # ----------------
+
+def add_spare_input(node=None, index=0):
+
+    parm_name = "spare_input{}".format(index)
+    parm_label = "Spare Input {}".format(index)
+
+    if node.parm(parm_name) is not None:
+        return node.parm(parm_name)
+
+    template_grp = node.parmTemplateGroup()
+
+    tags = {"opfilter":"!!SOP!!", "oprelative":"."}
+    spare_in = hou.StringParmTemplate(name=parm_name,
+                                      label=parm_label,
+                                      num_components=1,
+                                      string_type=NodeReference,
+                                      tags=tags,
+                                      default_value=('',))
+
+    template_grp.addParmTemplate(spare_in)
+    node.setParmTemplateGroup(template_grp)
+
+    return node.parm(parm_name)
 
 def block_node_type(node=None):
     ''' Return the type of compile node, if not compile node, return None.
