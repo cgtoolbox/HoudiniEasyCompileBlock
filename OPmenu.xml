@@ -11,7 +11,9 @@
           <expression>
             <![CDATA[
 try:
-  return kwargs["node"].type().name() == "block_end"
+  import houdini_easy_compile_block
+  reload(houdini_easy_compile_block)
+  return houdini_easy_compile_block.is_valid_forloop_compilation(kwargs["node"])
 except Exception as e:
   return False]]>
           </expression>
@@ -26,7 +28,7 @@ houdini_easy_compile_block.compile_forloop(node=kwargs["node"])
       </scriptItem>
 
       <scriptItem id="houdini_easy_compile_block_selection">
-        <label>Easy Compile Block: Selection</label>
+        <label>Easy Compile Block: Node Selection</label>
         <context>
           <expression>
             <![CDATA[
@@ -42,6 +44,28 @@ except Exception as e:
 import houdini_easy_compile_block
 reload(houdini_easy_compile_block)
 houdini_easy_compile_block.compile_selection()
+]]>
+        </scriptCode>
+      </scriptItem>
+
+      <scriptItem id="houdini_easy_compile_updade_node">
+        <label>Easy Compile Block: Update Node</label>
+        <context>
+          <expression>
+            <![CDATA[
+try:
+  import houdini_easy_compile_block
+  reload(houdini_easy_compile_block)
+  return houdini_easy_compile_block.is_valid_for_node_update(node=kwargs["node"])
+except Exception as e:
+  return False]]>
+          </expression>
+        </context>
+        <scriptCode>
+          <![CDATA[
+import houdini_easy_compile_block
+reload(houdini_easy_compile_block)
+houdini_easy_compile_block.update_selected_node(node=kwargs["node"])
 ]]>
         </scriptCode>
       </scriptItem>

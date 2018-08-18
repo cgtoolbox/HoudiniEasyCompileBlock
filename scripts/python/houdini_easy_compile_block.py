@@ -1,7 +1,32 @@
+# MIT License
+# 
+# Copyright (c) 2017 Guillaume Jobst, www.cgtoolbox.com
+# 
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+# 
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+# 
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+
 import hou
 import sys
 import os
 import re
+
+__version__ = "0.5.0"
 
 NodeReference = hou.stringParmType.NodeReference
 COMPILE_NODE_COLOR = hou.Color(0.75, 0.75, 0.0)
@@ -26,9 +51,9 @@ class ResultSummary(object):
         details += "\n\nParameters updated:"
 
         for k, v in self.parm_updated.iteritems():
-            details += "\n\n    Node: " + k + "\n"
+            details += "\n\n    Node: " + k
             for n in v:
-                details += '        -' + n
+                details += '\n        -' + n
 
         return details
 
@@ -38,17 +63,59 @@ def compile_selection():
     out_nodes = []
     invalid_nodes = []
 
+    summary = ResultSummary()
+
+    # check for invalid nodes ( not compilable )
+    if invalid_nodes:
+
+        details_str = '\n'.join([n.name() for n in invalid_nodes])
+
+        hou.ui.displayMessage(("Can't compile the forloop "
+                               "as non-compilable nodes were found"),
+                                title="Error",
+                                details=details_str,
+                                details_label="Show non-compilable nodes",
+                                severity=hou.severityType.Error)
+        return None
+
+    result = get_start_end_nodes()
+    if not result:
+        return None
+
+    start_node, end_node = result
+
     for n in hou.selectedNodes():
       get_block_nodes(start_node=n,
                       out_nodes=out_nodes,
                       invalid_nodes=invalid_nodes,
                       recursive=False)
 
-    print "----"
-    for n in out_nodes: print n.name()
-    print "----"
-    for n in invalid_nodes: print n.name()
-    print "----"
+    # create compile block
+    block_name = "compile_" + start_node.name()
+    compile_begin = insert_compile_block(node=start_node,
+                                         block_name=block_name)
+    compile_end = insert_compile_block(node=end_node,
+                                       block_type="compile_end",
+                                       block_name=block_name)
+
+    compile_begin.parm("blockpath").set("../" + compile_end.name())
+
+    summary.compile_blocks_created = [compile_begin, compile_end]
+
+    # update node references and add spare input if needed
+    for n in out_nodes:
+        parms_updated = update_node_references(node=n)
+        if parms_updated is not None:
+            summary.parm_updated[n.name()] = parms_updated
+
+    compile_end.setDisplayFlag(True)
+    compile_end.setRenderFlag(True)
+    compile_end.setCurrent(True)
+
+    hou.ui.displayMessage("Compilation done !",
+                          title="Success",
+                          details=str(summary),
+                          details_label="Show more infos")
     
 def compile_forloop(node=None):
 
@@ -122,6 +189,50 @@ def compile_forloop(node=None):
                           title="Success",
                           details=str(summary),
                           details_label="Show more infos")
+
+def update_selected_node(node=None):
+
+    summary = ResultSummary()
+
+    parms_updated = update_node_references(node=node)
+    if parms_updated is not None:
+        summary.parm_updated[node.name()] = parms_updated
+
+    hou.ui.displayMessage("Update done !",
+                          title="Success",
+                          details=str(summary),
+                          details_label="Show more infos")
+
+def is_valid_forloop_compilation(node=None):
+
+    outputs = node.outputs()
+
+    if outputs:
+        already_cmp = any([n.type().name() == "compile_end" for \
+                           n in outputs])
+    else:
+        already_cmp = False
+    
+    return node.type().name() == "block_end" and not already_cmp
+
+def is_valid_for_node_update(node=None):
+
+    tokens = []
+    for parm in node.parms():
+
+        is_expr = True
+        try:
+            expr = parm.expression()
+        except hou.OperationFailed:
+            is_expr = False
+            expr = parm.rawValue()
+
+        token = extract_expr_token(node=node,
+                                   processed_expr_val=expr)
+        if token:
+            tokens += token
+
+    return len(tokens) > 0
 
 # ----------------
 
@@ -292,8 +403,8 @@ def update_node_references(node=None):
             is_expr = False
             expr = parm.rawValue()
 
-            token = extract_expr_token(node=node,
-                                       processed_expr_val=expr)
+        token = extract_expr_token(node=node,
+                                    processed_expr_val=expr)
         if not token:
             continue
 
@@ -301,7 +412,8 @@ def update_node_references(node=None):
         new_values = []
 
         for t in token:
-            spare_input = get_spare_input(node=node, value=t.replace('"', ''))
+            spare_input = get_spare_input(node=node,
+                                          value=t.replace('"', ''))
             if not spare_input:
                 idx = get_n_spare_inputs(node=node)
                 spare_input = add_spare_input(node=node,
@@ -363,3 +475,28 @@ def replace_expressions(parm=None, old_values=[], new_values=[]):
     processed_expr_val = expr_val.repace(' ', '')
 
     return parm
+
+def get_start_end_nodes(nodes=hou.selectedNodes()):
+
+    if len(nodes) < 2:
+        hou.ui.displayMessage("Need to select more than one node",
+                              severity=hou.severityType.Error)
+        return None
+
+    start_node = None
+    end_node = None
+
+    for node in nodes:
+
+        if start_node is not None and end_node is not None:
+            break
+
+        if all([n not in nodes for n in node.outputs()]):
+            end_node = node
+            continue
+
+        if all([n not in nodes for n in node.inputs()]):
+            start_node = node
+            continue
+
+    return start_node, end_node
