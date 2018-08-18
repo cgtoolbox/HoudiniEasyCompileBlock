@@ -4,17 +4,33 @@ import os
 import re
 
 NodeReference = hou.stringParmType.NodeReference
+COMPILE_NODE_COLOR = hou.Color(0.75, 0.75, 0.0)
 
-expression_re = re.compile('\"\.\./[^,]+\"|\"(/obj/)[^,]+\"|\"(obj/)[^,]+\"')
+expression_re = re.compile('\"\.\./(.*?)\"|\"(/obj/)(.*?)\"|\"(obj/)(.*?)\"')
 
-class BlockNodeTypes(object):
+class ResultSummary(object):
 
-    NONE = None
-    COMPILE_INPUT = 1
-    COMPILE_END = 2
-    COMPILE_BEGIN_METADATA = 3
-    COMPILE_BEGIN_FEEDBACK = 4
-    COMPILE_BEGIN_PIECE = 5
+    __slots__ = ["compile_blocks_created",
+                 "parm_updated"]
+
+    def __init__(self):
+
+        self.compile_blocks_created = []
+        self.parm_updated = {}
+
+    def __str__(self):
+
+        details = "Compile block created:\n"
+        for n in self.compile_blocks_created:
+            details += '\n    -' + n.name()
+        details += "\n\nParameters updated:"
+
+        for k, v in self.parm_updated.iteritems():
+            details += "\n\n    Node: " + k + "\n"
+            for n in v:
+                details += '        -' + n
+
+        return details
 
 # ---------------- Menu methods
 def compile_selection():
@@ -36,21 +52,121 @@ def compile_selection():
     
 def compile_forloop(node=None):
 
+    summary = ResultSummary()
+
     out_nodes = []
     invalid_nodes = []
+
     get_block_nodes(start_node=node,
                     out_nodes=out_nodes,
                     invalid_nodes=invalid_nodes)
 
-    print "----"
-    for n in out_nodes: print n.name()
-    print "----"
-    for n in invalid_nodes: print n.name()
-    print "----"
+    # check for invalid nodes ( not compilable )
+    if invalid_nodes:
+
+        details_str = '\n'.join([n.name() for n in invalid_nodes])
+
+        hou.ui.displayMessage(("Can't compile the forloop "
+                               "as non-compilable nodes were found"),
+                                title="Error",
+                                details=details_str,
+                                details_label="Show non-compilable nodes",
+                                severity=hou.severityType.Error)
+        return
+
+    forloop_nodes = [n for n in node.dependents() \
+                     if n.type().name() in ["block_begin", "block_end"] \
+                     and n.evalParm("method") != 2]
+    forloop_nodes.append(node)
+
+    block_name = "compile_" + node.name()
+    expression_value = ""
+    compile_block_nodes = []
+
+    # create compile block nodes
+    for n in forloop_nodes:
+
+        if n.type().name() == "block_end":
+            block_type="compile_end"
+        else:
+            block_type="compile_begin"
+
+        n = insert_compile_block(node=n, block_type=block_type,
+                                 block_name=block_name)
+
+        if block_type == "compile_end":
+            expression_value = "../" + n.name()
+
+        compile_block_nodes.append(n)
+
+    summary.compile_blocks_created = compile_block_nodes
+
+    # update compile block start expression
+    for n in compile_block_nodes:
+
+        if n is not None and n.type().name() != "compile_begin":
+            continue
+
+        n.parm("blockpath").set(expression_value)
+
+    # switch on multithreading for loop
+    node.parm("multithread").set(1)
+
+    # update node references and add spare input if needed
+    for n in out_nodes:
+        parms_updated = update_node_references(node=n)
+        if parms_updated is not None:
+            summary.parm_updated[n.name()] = parms_updated
+
+    hou.ui.displayMessage("Compilation done !",
+                          title="Success",
+                          details=str(summary),
+                          details_label="Show more infos")
 
 # ----------------
 
-def add_spare_input(node=None, index=0):
+def insert_compile_block(node=None, block_type="compile_begin",
+                         block_name=""):
+
+    input_node = node.inputs()
+    outputs = node.outputConnections()
+
+    if not input_node:
+        return None
+    
+    node_pos = node.position()
+
+    input_node = input_node[0]
+
+    parent = node.parent()
+    comp = parent.createNode(block_type,
+                             node_name=block_name)
+    comp.setColor(COMPILE_NODE_COLOR)
+
+    if block_type == "compile_begin":
+        comp.setInput(0, input_node)
+        node.setInput(0, comp)
+
+        comp_pos = node_pos + hou.Vector2([0.0, 1.0])
+        comp.setPosition(comp_pos)
+
+    else:
+        comp.setInput(0, node)
+        comp_pos = node_pos + hou.Vector2([0.0, -1.0])
+        comp.setPosition(comp_pos)
+
+        for c in outputs:
+
+            out = c.outputItem()
+            out.setInput(c.outputIndex(), comp)
+
+        comp.setDisplayFlag(True)
+        comp.setRenderFlag(True)
+        comp.setCurrent(True)
+
+    return comp
+
+def add_spare_input(node=None, index=0, value=""):
 
     parm_name = "spare_input{}".format(index)
     parm_label = "Spare Input {}".format(index)
@@ -61,48 +177,41 @@ def add_spare_input(node=None, index=0):
     template_grp = node.parmTemplateGroup()
 
     tags = {"opfilter":"!!SOP!!", "oprelative":"."}
+    help = ('Refer to this in expressions as -{0},'
+            ' such as: npoint(-{0})'.format(index))
+
     spare_in = hou.StringParmTemplate(name=parm_name,
                                       label=parm_label,
                                       num_components=1,
                                       string_type=NodeReference,
                                       tags=tags,
-                                      default_value=('',))
+                                      default_value=('',),
+                                      help=help)
 
     template_grp.addParmTemplate(spare_in)
     node.setParmTemplateGroup(template_grp)
 
+    node.parm(parm_name).set(value.replace('"', ''))
+
     return node.parm(parm_name)
 
-def block_node_type(node=None):
-    ''' Return the type of compile node, if not compile node, return None.
-    '''
+def get_spare_input(node=None, value=""):
 
-    if not node:
-        return BlockNodeTypes.NONE
+    spare_inputs = [p for p in node.parms() \
+                    if p.name().startswith("spare_input") and \
+                    p.eval() == value]
 
-    node_type = node.type()
+    if not spare_inputs:
+        return None
 
-    # not a valid compile node
-    if node_type is None \
-       or node_type.category().name() != "Sop" \
-       or not node_type.name() in ["block_end", "block_begin"]:
-        return BlockNodeTypes.NONE
+    return spare_inputs[0]
 
-    # check which compil enode it is
-    if node_type.name() == "block_end":
-        return BlockNodeTypes.COMPILE_END
+def get_n_spare_inputs(node=None):
 
-    method = node.evalParm("method")
-    if method == 0:
-        return BlockNodeTypes.COMPILE_BEGIN_FEEDBACK
-    elif method == 1:
-        return BlockNodeTypes.COMPILE_BEGIN_PIECE
-    elif method == 2:
-        return BlockNodeTypes.COMPILE_BEGIN_METADATA
-    elif method == 3:
-        return BlockNodeTypes.COMPILE_INPUT
-    else:
-        return BlockNodeTypes.NONE
+    spare_inputs = [p for p in node.parms() \
+                    if p.name().startswith("spare_input")]
+
+    return len(spare_inputs)
 
 def is_compilable_node(node=None):
 
@@ -122,7 +231,7 @@ def is_compilable_node(node=None):
         return True
 
 def get_block_nodes(start_node=None, out_nodes=[], invalid_nodes=[],
-                      recursive=True):
+                    recursive=True):
     """ Recursively ( or not ) find node from a given node selection,
         either a for loop not begin, or a selection of nodes.
     """
@@ -132,10 +241,8 @@ def get_block_nodes(start_node=None, out_nodes=[], invalid_nodes=[],
 
         if is_compilable_node(node=start_node):
             out_nodes.append(start_node)
-            start_node.setColor(hou.Color(0.0, 0.8, 0.0))
         else:
             invalid_nodes.append(start_node)
-            start_node.setColor(hou.Color(0.8, 0.0, 0.0))
 
         return
 
@@ -161,16 +268,68 @@ def get_block_nodes(start_node=None, out_nodes=[], invalid_nodes=[],
             if cur_in_type != "block_begin":
                 if is_compilable_node(node=cur_in):
                     out_nodes.append(cur_in)
-                    cur_in.setColor(hou.Color(0.0, 0.8, 0.0))
                 else:
                     invalid_nodes.append(cur_in)
-                    cur_in.setColor(hou.Color(0.8, 0.0, 0.0))
 
             get_block_nodes(start_node=cur_in,
                             out_nodes=out_nodes,
                             invalid_nodes=invalid_nodes)
 
-def extract_expr_token(processed_expr_val=""):
+def update_node_references(node=None):
+    """ Update node parameters expression if needed, to update node references
+        to use spare input created instread.
+    """
+    parms = node.parms()
+
+    parm_changed = []
+
+    for parm in parms:
+
+        is_expr = True
+        try:
+            expr = parm.expression()
+        except hou.OperationFailed:
+            is_expr = False
+            expr = parm.rawValue()
+
+            token = extract_expr_token(node=node,
+                                       processed_expr_val=expr)
+        if not token:
+            continue
+
+        old_values = []
+        new_values = []
+
+        for t in token:
+            spare_input = get_spare_input(node=node, value=t.replace('"', ''))
+            if not spare_input:
+                idx = get_n_spare_inputs(node=node)
+                spare_input = add_spare_input(node=node,
+                                              index=idx,
+                                              value=t)
+            else:
+                idx = int(spare_input.name().split('input')[-1])
+
+            old_values.append(t)
+            new_values.append(t.replace(t, '-{}'.format(idx + 1)))
+
+        for old_v, new_v in zip(old_values, new_values):
+
+            expr = expr.replace(old_v, new_v)
+
+        if is_expr:
+            parm.setExpression(expr)
+        else:
+            parm.set(expr)
+
+        parm_changed.append(parm.name())
+
+    if not parm_changed:
+        return None
+
+    return parm_changed
+
+def extract_expr_token(node=None, processed_expr_val=""):
 
     token_result = []
 
@@ -178,14 +337,17 @@ def extract_expr_token(processed_expr_val=""):
     for token in expression_re.finditer(processed_expr_val):
 
         span = token.span()
-        token_result.append(processed_expr_val[span[0]:span[1]])
+        s = processed_expr_val[span[0]:span[1]]
+        s = s.replace(',', '').replace(' ', '').replace('"', '')
+
+        n = node.node(s)
+        if isinstance(n, hou.Node):
+            token_result.append('"' + s + '"')
 
     return token_result
     
-def replace_expressions(node=None, old_value="", new_value=""):
-    ''' Update node's expressions node paths, "old_value" will be replaced
-        by "new_value" to basically bind it to a spare input.
-    '''
+def replace_expressions(parm=None, old_values=[], new_values=[]):
+    
     if not node or old_value == "" or new_value == "":
         return None
 
@@ -193,13 +355,11 @@ def replace_expressions(node=None, old_value="", new_value=""):
     if not references:
         return None
 
-    parms = node.parms()
+    try:
+        expr_val = parm.expression()
+    except hou.OperationFailed:
+        return None
 
-    for parm in parms:
+    processed_expr_val = expr_val.repace(' ', '')
 
-        try:
-            expr_val = parm.expression()
-        except hou.OperationFailed:
-            continue
-
-        processed_expr_val = expr_val.repace(' ', '')
+    return parm
