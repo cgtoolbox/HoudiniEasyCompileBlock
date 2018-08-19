@@ -39,21 +39,63 @@ class ResultSummary(object):
     def __init__(self):
 
         self.compile_blocks_created = []
-        self.parm_updated = {}
+        self.parm_updated = []
 
     def __str__(self):
 
-        details = "Compile block created:\n"
+        details = "Compile blocks created:\n"
         for n in self.compile_blocks_created:
-            details += '\n    -' + n.name()
-        details += "\n\nParameters updated:"
+            details += '\n    -' + n.path()
+        details += "\n\nParameters updated:\n"
 
-        for k, v in self.parm_updated.iteritems():
-            details += "\n\n    Node: " + k
-            for n in v:
-                details += '\n        -' + n
-
+        for data in self.parm_updated:
+            details += "\n    -{}".format(data.parm.path())
         return details
+
+    def n_compile_blocks(self):
+
+        return len(self.compile_blocks_created)
+
+    def n_parms_updated(self):
+
+        return len(self.parm_updated)
+
+    def data(self):
+
+        d = {}
+        d["compile_blocks_created"] = [n.path() for \
+                                       n in self.compile_blocks_created \
+                                       if n]
+
+        d["parm_updated"] = [n.data() for n in self.parm_updated if n]
+        return d
+
+class ParmChanges(object):
+
+    __slots__ = ["parm",
+                 "node",
+                 "is_expr",
+                 "old_value",
+                 "new_value"]
+
+    def __init__(self):
+
+        self.parm = None
+        self.node = None
+        self.is_expr = False
+        self.old_value = ""
+        self.new_value = ""
+
+    def data(self):
+
+        d = {}
+        d["parm"] = self.parm.path()
+        d["node"] = self.node.path()
+        d["is_expr"] = self.is_expr
+        d["old_value"] = self.old_value
+        d["new_value"] = self.new_value
+
+        return d
 
 # ---------------- Menu methods
 def compile_selection():
@@ -104,13 +146,17 @@ def compile_selection():
     for n in out_nodes:
         parms_updated = update_node_references(node=n)
         if parms_updated is not None:
-            summary.parm_updated[n.name()] = parms_updated
+            summary.parm_updated += parms_updated
 
     compile_end.setDisplayFlag(True)
     compile_end.setRenderFlag(True)
     compile_end.setCurrent(True)
 
-    hou.ui.displayMessage("Compilation done !",
+    n_comps = summary.n_compile_blocks()
+    n_parms = summary.n_parms_updated()
+    hou.ui.displayMessage(("Compilation done !\n{} Nodes created and "
+                           "{} parameter(s) updated.".format(n_comps,
+                                                             n_parms)),
                           title="Success",
                           details=str(summary),
                           details_label="Show more infos")
@@ -181,9 +227,18 @@ def compile_forloop(node=None):
     for n in out_nodes:
         parms_updated = update_node_references(node=n)
         if parms_updated is not None:
-            summary.parm_updated[n.name()] = parms_updated
+            summary.parm_updated += parms_updated
 
-    hou.ui.displayMessage("Compilation done !",
+    # save what changed in the for loop user data to be able
+    # to undo the compilation if needed
+    node.setCachedUserData("easy_compile_foorloop",
+                           summary.data())
+
+    n_comps = summary.n_compile_blocks()
+    n_parms = summary.n_parms_updated()
+    hou.ui.displayMessage(("Compilation done !\n{} Nodes created and "
+                           "{} parameter(s) updated.".format(n_comps,
+                                                             n_parms)),
                           title="Success",
                           details=str(summary),
                           details_label="Show more infos")
@@ -194,7 +249,7 @@ def update_selected_node(node=None):
 
     parms_updated = update_node_references(node=node)
     if parms_updated is not None:
-        summary.parm_updated[node.name()] = parms_updated
+        summary.parm_updated += parms_updated
 
     hou.ui.displayMessage("Update done !",
                           title="Success",
@@ -406,6 +461,7 @@ def update_node_references(node=None):
         if not token:
             continue
 
+        old_expr = expr
         old_values = []
         new_values = []
 
@@ -432,7 +488,14 @@ def update_node_references(node=None):
         else:
             parm.set(expr)
 
-        parm_changed.append(parm.name())
+        parm_changes = ParmChanges()
+        parm_changes.parm = parm
+        parm_changes.node = node
+        parm_changes.is_expr = is_expr
+        parm_changes.old_value = old_expr
+        parm_changes.new_value = expr
+
+        parm_changed.append(parm_changes)
 
     if not parm_changed:
         return None
@@ -455,24 +518,6 @@ def extract_expr_token(node=None, processed_expr_val=""):
             token_result.append('"' + s + '"')
 
     return token_result
-    
-def replace_expressions(parm=None, old_values=[], new_values=[]):
-    
-    if not node or old_value == "" or new_value == "":
-        return None
-
-    references = node.references()
-    if not references:
-        return None
-
-    try:
-        expr_val = parm.expression()
-    except hou.OperationFailed:
-        return None
-
-    processed_expr_val = expr_val.repace(' ', '')
-
-    return parm
 
 def get_start_end_nodes(nodes=hou.selectedNodes()):
 
