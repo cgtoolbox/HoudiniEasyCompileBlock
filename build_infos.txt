@@ -1,0 +1,5 @@
+$VERSION:scripts/python/HoudiniEasyCompileBlock/__init__.py
+$NAME:HoudiniEasyCompileBlock
+$DOC_LINK:cgtoolbox.com/houdini-easy-compile-block/
+scripts:scripts
+/:OPmenu.xml

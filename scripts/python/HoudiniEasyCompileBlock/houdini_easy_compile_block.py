@@ -26,8 +26,6 @@ import sys
 import os
 import re
 
-__version__ = "0.5.0"
-
 NodeReference = hou.stringParmType.NodeReference
 COMPILE_NODE_COLOR = hou.Color(0.75, 0.75, 0.0)
 
