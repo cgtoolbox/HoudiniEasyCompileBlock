@@ -150,7 +150,7 @@ def compile_selection():
 
     compile_end.setDisplayFlag(True)
     compile_end.setRenderFlag(True)
-    compile_end.setCurrent(True)
+    compile_end.setCurrent(True, True)
 
     n_comps = summary.n_compile_blocks()
     n_parms = summary.n_parms_updated()
@@ -326,7 +326,7 @@ def insert_compile_block(node=None, block_type="compile_begin",
 
         comp.setDisplayFlag(True)
         comp.setRenderFlag(True)
-        comp.setCurrent(True)
+        comp.setCurrent(True, True)
 
     return comp
 
