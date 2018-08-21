@@ -446,6 +446,7 @@ def update_node_references(node=None):
     parms = node.parms()
 
     parm_changed = []
+    node_data = {}
 
     for parm in parms:
 
@@ -496,6 +497,10 @@ def update_node_references(node=None):
         parm_changes.new_value = expr
 
         parm_changed.append(parm_changes)
+
+        node_data[parm.path()] = [old_expr, expr]
+        node.setCachedUserData("easy_compile_block_data_" + node.name(),
+                               node_data)
 
     if not parm_changed:
         return None
