@@ -175,7 +175,7 @@ def compile_forloop(node=None):
     # check for invalid nodes ( not compilable )
     if invalid_nodes:
 
-        details_str = '\n'.join([n.name() for n in invalid_nodes])
+        details_str = '\n'.join([n.path() for n in invalid_nodes])
 
         hou.ui.displayMessage(("Can't compile the forloop "
                                "as non-compilable nodes were found"),
@@ -278,7 +278,13 @@ def is_valid_for_node_update(node=None):
             expr = parm.expression()
         except hou.OperationFailed:
             is_expr = False
-            expr = parm.rawValue()
+            if hasattr(parm, "rawValue"):
+                expr = parm.rawValue()
+            else:
+                try:
+                    expr = parm.unexpandedString()
+                except hou.OperationFailed:
+                    return False
 
         token = extract_expr_token(node=node,
                                    processed_expr_val=expr)
@@ -455,7 +461,13 @@ def update_node_references(node=None):
             expr = parm.expression()
         except hou.OperationFailed:
             is_expr = False
-            expr = parm.rawValue()
+            if hasattr(parm, "rawValue"):
+                expr = parm.rawValue()
+            else:
+                try:
+                    expr = parm.unexpandedString()
+                except hou.OperationFailed:
+                    expr = ""
 
         token = extract_expr_token(node=node,
                                     processed_expr_val=expr)
