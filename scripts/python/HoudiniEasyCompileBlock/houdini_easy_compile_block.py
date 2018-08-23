@@ -122,7 +122,7 @@ def compile_selection():
     if not result:
         return None
 
-    start_node, end_node = result
+    start_nodes, end_node = result
 
     for n in hou.selectedNodes():
       get_block_nodes(start_node=n,
@@ -131,12 +131,18 @@ def compile_selection():
                       recursive=False)
 
     # create compile block
-    block_name = "compile_" + start_node.name()
-    compile_begin = insert_compile_block(node=start_node,
-                                         block_name=block_name)
+    block_name = "compile_" + end_node.name()
     compile_end = insert_compile_block(node=end_node,
                                        block_type="compile_end",
                                        block_name=block_name)
+
+    compile_begin = insert_compile_block(node=start_nodes[0],
+                                         block_name=block_name)
+
+    # connect any other input nodes
+    if len(start_nodes) > 1:
+        for n in start_nodes[1:]:
+            n.setInput(0, compile_begin)
 
     compile_begin.parm("blockpath").set("../" + compile_end.name())
 
@@ -543,20 +549,19 @@ def get_start_end_nodes(nodes=hou.selectedNodes()):
                               severity=hou.severityType.Error)
         return None
 
-    start_node = None
+    start_nodes = []
     end_node = None
 
     for node in nodes:
 
-        if start_node is not None and end_node is not None:
-            break
-
         if all([n not in nodes for n in node.outputs()]):
-            end_node = node
+            if end_node is None:
+                end_node = node   
             continue
 
         if all([n not in nodes for n in node.inputs()]):
-            start_node = node
+            if not node in start_nodes:
+                start_nodes.append(node)
             continue
 
-    return start_node, end_node
+    return start_nodes, end_node
