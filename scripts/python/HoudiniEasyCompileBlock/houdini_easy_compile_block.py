@@ -105,19 +105,6 @@ def compile_selection():
 
     summary = ResultSummary()
 
-    # check for invalid nodes ( not compilable )
-    if invalid_nodes:
-
-        details_str = '\n'.join([n.name() for n in invalid_nodes])
-
-        hou.ui.displayMessage(("Can't compile the forloop "
-                               "as non-compilable nodes were found"),
-                                title="Error",
-                                details=details_str,
-                                details_label="Show non-compilable nodes",
-                                severity=hou.severityType.Error)
-        return None
-
     result = get_start_end_nodes()
     if not result:
         return None
@@ -129,6 +116,19 @@ def compile_selection():
                       out_nodes=out_nodes,
                       invalid_nodes=invalid_nodes,
                       recursive=False)
+
+    # check for invalid nodes ( not compilable )
+    if invalid_nodes:
+
+        details_str = '\n'.join([n.path() for n in invalid_nodes])
+
+        hou.ui.displayMessage(("Can't compile the forloop "
+                               "as non-compilable nodes were found"),
+                                title="Error",
+                                details=details_str,
+                                details_label="Show non-compilable nodes",
+                                severity=hou.severityType.Error)
+        return None
 
     # create compile block
     block_name = "compile_" + start_node.name()
