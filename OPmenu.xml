@@ -5,6 +5,18 @@
   <menu>
     <subMenu id="houdini_easy_compile_block_menu">
       <label>Easy Compile</label>
+      <context>
+        <expression>
+          <![CDATA[
+try:
+  from HoudiniEasyCompileBlock import houdini_easy_compile_block
+  reload(houdini_easy_compile_block)
+  return houdini_easy_compile_block.is_valid_forloop_compilation(kwargs["node"]) or \
+         len(hou.selectedNodes()) > 1
+except Exception as e:
+  return False]]>
+        </expression>
+      </context>
       <scriptItem id="houdini_easy_compile_block">
         <label>Easy Compile Block: For loop</label>
         <context>
