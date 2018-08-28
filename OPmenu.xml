@@ -18,7 +18,7 @@ except Exception as e:
         </expression>
       </context>
       <scriptItem id="houdini_easy_compile_block">
-        <label>Easy Compile Block: For loop</label>
+        <label>Compile For loop</label>
         <context>
           <expression>
             <![CDATA[
@@ -40,7 +40,7 @@ houdini_easy_compile_block.compile_forloop(node=kwargs["node"])
       </scriptItem>
 
       <scriptItem id="houdini_easy_compile_block_selection">
-        <label>Easy Compile Block: Node Selection</label>
+        <label>Compile Node Selection</label>
         <context>
           <expression>
             <![CDATA[
