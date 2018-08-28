@@ -306,13 +306,11 @@ def insert_compile_block(node=None, block_type="compile_begin",
 
     input_node = node.inputs()
     outputs = node.outputConnections()
-
-    if not input_node:
-        return None
     
     node_pos = node.position()
 
-    input_node = input_node[0]
+    if input_node:
+        input_node = input_node[0]
 
     parent = node.parent()
     comp = parent.createNode(block_type,
@@ -320,7 +318,8 @@ def insert_compile_block(node=None, block_type="compile_begin",
     comp.setColor(COMPILE_NODE_COLOR)
 
     if block_type == "compile_begin":
-        comp.setInput(0, input_node)
+        if input_node:
+            comp.setInput(0, input_node)
         node.setInput(0, comp)
 
         comp_pos = node_pos + hou.Vector2([0.0, 1.0])
