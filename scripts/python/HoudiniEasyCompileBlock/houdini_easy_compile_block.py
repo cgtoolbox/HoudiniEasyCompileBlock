@@ -31,6 +31,21 @@ COMPILE_NODE_COLOR = hou.Color(0.75, 0.75, 0.0)
 
 expression_re = re.compile('\"\.\./(.*?)\"|\"(/obj/)(.*?)\"|\"(obj/)(.*?)\"')
 
+STANDAR_VARS = {"$CEX":'centroid(${SPARE_INPUT}, D_X)',
+                "$CEY":'centroid(${SPARE_INPUT}, D_Y)',
+                "$CEZ":'centroid(${SPARE_INPUT}, D_Z)',
+                "$XMIN":'bbox(${SPARE_INPUT}, D_XMIN)',
+                "$YMIN":'bbox(${SPARE_INPUT}, D_YMIN)',
+                "$ZMIN":'bbox(${SPARE_INPUT}, D_ZMIN)',
+                "$XMAX":'bbox(${SPARE_INPUT}, D_XMAX)',
+                "$YMAX":'bbox(${SPARE_INPUT}, D_YMAX)',
+                "$ZMAX":'bbox(${SPARE_INPUT}, D_ZMAX)',
+                "$SIZEX":'bbox(${SPARE_INPUT}, D_XSIZE)',
+                "$SIZEY":'bbox(${SPARE_INPUT}, D_YSIZE)',
+                "$SIZEZ":'bbox(${SPARE_INPUT}, D_ZSIZE)',
+                "$NPT":'npoints(${SPARE_INPUT})',
+                "$NPR":'nprims(${SPARE_INPUT})'}
+
 class ResultSummary(object):
 
     __slots__ = ["compile_blocks_created",
@@ -461,6 +476,8 @@ def update_node_references(node=None):
 
     for parm in parms:
 
+        has_token = False
+
         is_expr = True
         try:
             expr = parm.expression()
@@ -476,8 +493,8 @@ def update_node_references(node=None):
 
         token = extract_expr_token(node=node,
                                     processed_expr_val=expr)
-        if not token:
-            continue
+        if token:
+            has_token = True
 
         old_expr = expr
         old_values = []
@@ -501,6 +518,39 @@ def update_node_references(node=None):
 
             expr = expr.replace(old_v, new_v)
 
+        # update global variables, use node's first input
+        # to create spare input
+
+        inputs = node.inputs()
+        if inputs:
+            inputs = inputs[0]
+
+        for var_name, expr_val in STANDAR_VARS.iteritems():
+
+            if var_name in expr and inputs:
+
+                has_token = True
+                is_expr = True
+
+                t = "../" + inputs.name()
+
+                spare_input = get_spare_input(node=node,
+                                              value=t)
+
+                if not spare_input:
+                    idx = get_n_spare_inputs(node=node)
+                    spare_input = add_spare_input(node=node,
+                                                  index=idx,
+                                                  value=t)
+                else:
+                    idx = int(spare_input.name().split('input')[-1])
+
+                expr_val = expr_val.replace("${SPARE_INPUT}", '-{}'.format(idx + 1))
+                expr = expr.replace(var_name, expr_val)
+
+        if not has_token:
+            continue
+        
         if is_expr:
             parm.setExpression(expr)
         else:
